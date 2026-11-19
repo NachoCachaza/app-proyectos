@@ -5,11 +5,11 @@ import { armarPropuesta, totalesPropuesta, propuestaHtml, oportunidadesParaPropu
 const NOW = new Date(2026, 10, 19, 12, 0)
 const project = { id: 'p1', name: 'Evoria' }
 const client = { name: 'Ana Coronado', company: 'Evoria Inc.' }
-const op = (o) => ({ projectId: 'p1', estado: 'nueva', categoria: 'marketing', cobro: 'unico', orden: 0, ...o })
+const op = (o) => ({ projectId: 'p1', estado: 'nueva', categoria: 'mejora', cobro: 'unico', orden: 0, ...o })
 const items = [
   op({ id: 'a', titulo: 'Academia', porQue: 'Cursos para la comunidad', montoUsd: 5000, estado: 'ofrecida', categoria: 'fase_2' }),
   op({ id: 'b', titulo: 'Mantenimiento', montoUsd: 300, cobro: 'mensual', estado: 'ofrecida', categoria: 'plan_mensual' }),
-  op({ id: 'c', titulo: 'Idea sin elegir', montoUsd: 1000, estado: 'nueva' }),
+  op({ id: 'c', titulo: 'Idea sin elegir', montoUsd: 1000, estado: 'nueva', categoria: 'mejora' }),
   op({ id: 'd', titulo: 'Descartada', montoUsd: 999, estado: 'descartada' }),
   op({ id: 'e', projectId: 'otro', titulo: 'De otro proyecto', estado: 'ofrecida' }),
 ]

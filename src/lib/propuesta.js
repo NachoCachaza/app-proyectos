@@ -38,7 +38,7 @@ const entra = (o) => o.estado === 'ofrecida' || o.enPropuesta === true
 export function oportunidadesParaPropuesta(items = [], projectId) {
   const orden = (o) => (entra(o) ? 0 : 1)
   return (items || [])
-    .filter((o) => o && o.projectId === projectId && o.estado !== 'descartada')
+    .filter((o) => o && o.projectId === projectId && o.estado !== 'descartada' && (o.estado !== 'nueva' || !['fase_2', 'plan_mensual', 'marketing', 'ciberseguridad', 'nuevo_sistema'].includes(o.categoria) || o.enPropuesta === true))
     .sort((a, b) => orden(a) - orden(b) || (a.orden || 0) - (b.orden || 0))
 }
 

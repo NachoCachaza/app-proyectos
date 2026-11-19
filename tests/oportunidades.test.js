@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   armarContexto, leerRespuestaIA, pedidoUpsell, vistaOportunidades, normalizeOpportunity, marcarPropuesta, quedaAlRepensar,
-  marcarDescartada, deshacerDescarte, tipoDeCategoria, ESQUEMA_RESPUESTA, MAX_OPORTUNIDADES,
+  marcarDescartada, deshacerDescarte, tipoDeCategoria, ESQUEMA_RESPUESTA, CATEGORIAS_IA, SISTEMA, MAX_OPORTUNIDADES,
   tableroOportunidades, filaOportunidades, filtrarFilas,
 } from '../src/lib/oportunidades.js'
 
@@ -88,6 +88,15 @@ test('el esquema de la respuesta es estricto y sin restricciones que la API no a
   assert.equal(item.additionalProperties, false)
   assert.deepEqual([...item.required].sort(), Object.keys(item.properties).sort())
   assert.ok(!JSON.stringify(ESQUEMA_RESPUESTA).match(/minItems|maxItems|minimum|maxLength/))
+})
+
+test('la IA solo propone mejoras para Fase 2 y las nuevas viejas de otras categorías no se ven', () => {
+  assert.deepEqual(ESQUEMA_RESPUESTA.properties.oportunidades.items.properties.categoria.enum, ['mejora'])
+  assert.deepEqual(CATEGORIAS_IA, ['mejora'])
+  const viejas = [{ id: 'v', projectId: 'p', titulo: 'x', porQue: 'y', categoria: 'marketing' }, { id: 'm', projectId: 'p', titulo: 'x', porQue: 'y', categoria: 'mejora' }, { id: 'o', projectId: 'p', titulo: 'x', porQue: 'y', categoria: 'marketing', estado: 'ofrecida' }]
+  assert.deepEqual(vistaOportunidades(viejas, 'p').nuevas.map((o) => o.id), ['m'])
+  assert.deepEqual(vistaOportunidades(viejas, 'p').vistas.map((o) => o.id), ['o'], 'lo ya ofrecido queda en el historial')
+  assert.ok(/No propongas planes de mantenimiento, marketing, ciberseguridad/.test(SISTEMA))
 })
 
 const respuesta = (n) => ({
@@ -185,9 +194,9 @@ const tableroClientes = [
 ]
 const tableroIdeas = [
   { id: 'o1', projectId: 'p1', titulo: 'Panel de métricas', estado: 'nueva', orden: 1, categoria: 'mejora', montoUsd: 1800, generadaAt: daysAgo(1) },
-  { id: 'o2', projectId: 'p1', titulo: 'Soporte premium', estado: 'nueva', orden: 0, categoria: 'plan_mensual', montoUsd: 300, cobro: 'mensual', generadaAt: daysAgo(1) },
+  { id: 'o2', projectId: 'p1', titulo: 'Soporte premium', estado: 'nueva', orden: 0, categoria: 'otro', montoUsd: 300, cobro: 'mensual', generadaAt: daysAgo(1) },
   { id: 'o3', projectId: 'p1', titulo: 'Ya ofrecida', estado: 'ofrecida', generadaAt: daysAgo(4) },
-  { id: 'o4', projectId: 'p2', titulo: 'Fase 2 del monitoreo', estado: 'nueva', orden: 0, categoria: 'fase_2', montoUsd: 9000, generadaAt: daysAgo(2) },
+  { id: 'o4', projectId: 'p2', titulo: 'Fase 2 del monitoreo', estado: 'nueva', orden: 0, categoria: 'mejora', montoUsd: 9000, generadaAt: daysAgo(2) },
   { id: 'o5', projectId: 'p6', titulo: 'No va', estado: 'descartada', generadaAt: daysAgo(5) },
 ]
 
@@ -221,7 +230,7 @@ test('un proyecto sin ideas queda "sin explorar" y uno con todas decididas "al d
 test('el filtro cruza pestaña, categoría y texto', () => {
   const { filas } = tableroOportunidades(tableroIdeas, tableroProyectos, tableroClientes)
   assert.deepEqual(filtrarFilas(filas, { estado: 'sin_explorar' }).map((f) => f.id), ['p3'])
-  assert.deepEqual(filtrarFilas(filas, { categoria: 'fase_2' }).map((f) => f.id), ['p2'])
+  assert.deepEqual(filtrarFilas(filas, { categoria: 'otro' }).map((f) => f.id), ['p1'])
   assert.deepEqual(filtrarFilas(filas, { q: 'MONITOREO' }).map((f) => f.id), ['p2'])   // busca en las ideas
   assert.deepEqual(filtrarFilas(filas, { q: 'komos' }).map((f) => f.id), ['p3'])       // y en cliente y proyecto
   assert.deepEqual(filtrarFilas(filas, { q: 'nada de esto' }), [])

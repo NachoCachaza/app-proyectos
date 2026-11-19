@@ -27,10 +27,16 @@ export const CATEGORIAS = [
   { key: 'marketing', label: 'Marketing', tipo: 'marketing' },
   { key: 'ciberseguridad', label: 'Ciberseguridad', tipo: 'otro' },
   { key: 'nuevo_sistema', label: 'Nuevo sistema', tipo: 'otro' },
-  { key: 'mejora', label: 'Mejora', tipo: 'otro' },
+  { key: 'mejora', label: 'Mejora para Fase 2', tipo: 'otro' },
   { key: 'otro', label: 'Otra idea', tipo: 'otro' },
 ]
 const CATEGORIA_KEYS = CATEGORIAS.map((c) => c.key)
+// Lo que la IA puede proponer hoy: solo ideas y mejoras (pedido de Nacho, 19/11). Las otras
+// categorías siguen existiendo para las oportunidades viejas, pero ya no se generan.
+export const CATEGORIAS_IA = ['mejora']
+// Las nuevas que no son mejoras (de antes de este cambio) no se muestran: no servían (Nacho, 19/11).
+const VIEJAS = ['fase_2', 'plan_mensual', 'marketing', 'ciberseguridad', 'nuevo_sistema']
+export const sinViejas = (o) => o.estado !== 'nueva' || !VIEJAS.includes(o.categoria)
 export const categoriaMeta = (k) => CATEGORIAS.find((c) => c.key === k) || CATEGORIAS[CATEGORIAS.length - 1]
 export const tipoDeCategoria = (k) => categoriaMeta(k).tipo
 
@@ -59,7 +65,7 @@ export const ESQUEMA_RESPUESTA = {
           titulo: { type: 'string', description: 'Qué se ofrece, en pocas palabras (hasta 70 caracteres).' },
           por_que: { type: 'string', description: 'Por qué a este cliente y ahora, en una o dos oraciones.' },
           senal: { type: 'string', description: 'El dato concreto del proyecto que la dispara.' },
-          categoria: { type: 'string', enum: CATEGORIA_KEYS },
+          categoria: { type: 'string', enum: CATEGORIAS_IA },
           monto_usd: { anyOf: [{ type: 'number' }, { type: 'null' }], description: 'Estimado en dólares, o null si no hay base para estimarlo.' },
           cobro: { type: 'string', enum: ['unico', 'mensual'] },
           frase: { type: 'string', description: 'La primera frase para abrir la charla con el cliente.' },
@@ -74,7 +80,7 @@ export const SISTEMA = `Sos parte del equipo de Insights, una agencia que constr
 Cómo pensarlas:
 - La pregunta no es qué le podemos vender, sino cómo lo podemos ayudar a que le vaya mejor con lo que construimos. Una buena oportunidad resuelve algo que el cliente ya tiene en la cabeza o que el proyecto deja a la vista.
 - Cada una sale de un dato del proyecto: algo que falta en el roadmap, una tarea pendiente, una nota de una call, un riesgo, lo que dijo en el onboarding, la etapa en la que está. Nombrá ese dato en "senal". Si no hay un dato que la sostenga, no la propongas.
-- Lo que solemos ofrecer: Fase 2 (un desarrollo nuevo sobre lo que ya tiene), plan mensual de mantenimiento y soporte, marketing (un plan de 6 meses para conseguirle usuarios o clientes), ciberseguridad, un sistema nuevo para otra empresa o área del cliente, y mejoras puntuales. Una idea que no entre en esas también vale si tiene sentido.
+- Solo nos interesan mejoras para una Fase 2: algo que se le puede agregar o mejorar al producto que ya construimos, un hueco que el proyecto deja a la vista. Todas van en la categoría "mejora". No propongas planes de mantenimiento, marketing, ciberseguridad ni sistemas nuevos.
 - No repitas lo que ya se le ofreció ni lo que el equipo descartó: está en la sección "Ya ofrecido o descartado".
 - Sé específico: "Panel de métricas para los comercios de Mi cupón" sirve; "Mejoras generales" no.
 - monto_usd: un estimado en dólares sólo si el proyecto da una base (lo que ya pagó, el monto de mantenimiento, el tamaño de lo que falta). Si no, null. Para algo mensual, el monto es por mes y cobro es "mensual".
@@ -246,7 +252,7 @@ export function pedidoUpsell(op, responsable, finClientId = null) {
 }
 
 export function vistaOportunidades(items, projectId) {
-  const mias = (items || []).map(normalizeOpportunity).filter((o) => o.projectId === projectId)
+  const mias = (items || []).map(normalizeOpportunity).filter((o) => o.projectId === projectId).filter(sinViejas)
   const nuevas = mias.filter((o) => o.estado === 'nueva')
     .sort((a, b) => (b.enPropuesta === true) - (a.enPropuesta === true) || a.orden - b.orden)
   const cuando = (o) => o.ofrecidaAt || o.descartadaAt || o.generadaAt || ''
@@ -296,7 +302,7 @@ const RANGO = { para_ofrecer: 0, sin_explorar: 1, al_dia: 2 }
 export function filaOportunidades(project, items = [], client = null) {
   const p = unrow(project) || {}
   const c = unrow(client) || null
-  const mias = (items || []).map(normalizeOpportunity).filter((o) => o.projectId === p.id)
+  const mias = (items || []).map(normalizeOpportunity).filter((o) => o.projectId === p.id).filter(sinViejas)
   const ideas = mias.filter((o) => o.estado === 'nueva').sort((a, b) => a.orden - b.orden)
   const ofrecidas = mias.filter((o) => o.estado === 'ofrecida')
   const descartadas = mias.filter((o) => o.estado === 'descartada')
