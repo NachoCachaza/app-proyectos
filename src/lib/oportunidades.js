@@ -36,6 +36,9 @@ const CATEGORIA_KEYS = CATEGORIAS.map((c) => c.key)
 export const CATEGORIAS_IA = ['mejora']
 // Las nuevas que no son mejoras (de antes de este cambio) no se muestran: no servían (Nacho, 19/11).
 const VIEJAS = ['fase_2', 'plan_mensual', 'marketing', 'ciberseguridad', 'nuevo_sistema']
+// Lo generado desde esta fecha es para Fase 2 aunque la función de Supabase (si todavía no se
+// actualizó) lo haya etiquetado con una categoría vieja: se muestra como "Mejora".
+const CORTE_MEJORAS = '2026-11-19T00:00:00.000Z'
 export const sinViejas = (o) => o.estado !== 'nueva' || !VIEJAS.includes(o.categoria)
 export const categoriaMeta = (k) => CATEGORIAS.find((c) => c.key === k) || CATEGORIAS[CATEGORIAS.length - 1]
 export const tipoDeCategoria = (k) => categoriaMeta(k).tipo
@@ -178,7 +181,8 @@ const idAzar = () => Math.random().toString(36).slice(2, 10) + Date.now().toStri
 
 export function normalizeOpportunity(o) {
   const x = o && typeof o === 'object' ? o : {}
-  const categoria = CATEGORIA_KEYS.includes(x.categoria) ? x.categoria : 'otro'
+  let categoria = CATEGORIA_KEYS.includes(x.categoria) ? x.categoria : 'otro'
+  if (VIEJAS.includes(categoria) && (x.estado || 'nueva') === 'nueva' && String(x.generadaAt || '') >= CORTE_MEJORAS) categoria = 'mejora'
   return {
     ...x,
     titulo: clip(x.titulo, 120),

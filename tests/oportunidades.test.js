@@ -96,6 +96,8 @@ test('la IA solo propone mejoras para Fase 2 y las nuevas viejas de otras catego
   const viejas = [{ id: 'v', projectId: 'p', titulo: 'x', porQue: 'y', categoria: 'marketing' }, { id: 'm', projectId: 'p', titulo: 'x', porQue: 'y', categoria: 'mejora' }, { id: 'o', projectId: 'p', titulo: 'x', porQue: 'y', categoria: 'marketing', estado: 'ofrecida' }]
   assert.deepEqual(vistaOportunidades(viejas, 'p').nuevas.map((o) => o.id), ['m'])
   assert.deepEqual(vistaOportunidades(viejas, 'p').vistas.map((o) => o.id), ['o'], 'lo ya ofrecido queda en el historial')
+  const hoy = [{ id: 'n', projectId: 'p', titulo: 'x', porQue: 'y', categoria: 'marketing', generadaAt: '2026-11-19T15:00:00.000Z' }]
+  assert.deepEqual(vistaOportunidades(hoy, 'p').nuevas.map((o) => [o.id, o.categoria]), [['n', 'mejora']], 'lo que genera hoy la función vieja se ve como mejora')
   assert.ok(/No propongas planes de mantenimiento, marketing, ciberseguridad/.test(SISTEMA))
 })
 

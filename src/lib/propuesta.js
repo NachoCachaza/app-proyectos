@@ -8,7 +8,7 @@
  * Lo usan la ventana de Oportunidades y tests/propuesta.test.js.
  */
 
-import { categoriaMeta } from './oportunidades.js'
+import { categoriaMeta, normalizeOpportunity, sinViejas } from './oportunidades.js'
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
@@ -38,7 +38,7 @@ const entra = (o) => o.estado === 'ofrecida' || o.enPropuesta === true
 export function oportunidadesParaPropuesta(items = [], projectId) {
   const orden = (o) => (entra(o) ? 0 : 1)
   return (items || [])
-    .filter((o) => o && o.projectId === projectId && o.estado !== 'descartada' && (o.estado !== 'nueva' || !['fase_2', 'plan_mensual', 'marketing', 'ciberseguridad', 'nuevo_sistema'].includes(o.categoria) || o.enPropuesta === true))
+    .filter((o) => o && o.projectId === projectId && o.estado !== 'descartada' && (sinViejas(normalizeOpportunity(o)) || o.enPropuesta === true))
     .sort((a, b) => orden(a) - orden(b) || (a.orden || 0) - (b.orden || 0))
 }
 
