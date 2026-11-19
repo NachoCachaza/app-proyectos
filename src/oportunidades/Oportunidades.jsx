@@ -301,6 +301,7 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
     if (r.error) { setError(r.error); return }
     const filas = (r.data?.oportunidades || []).map(normalizeOpportunity)
     setRecien({ projectId: project.id, filas, ids: new Set(filas.map((f) => f.id)) })
+    if (!filas.some((f) => f.estado === 'nueva')) setError('Pensó, pero no encontró ideas nuevas para este proyecto por ahora.')
   }
 
   const ofrecer = async (op, finClientId) => {
