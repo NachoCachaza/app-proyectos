@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { armarPropuesta, totalesPropuesta, propuestaHtml, oportunidadesParaPropuesta, dolares, esc } from '../src/lib/propuesta.js'
+import { armarPropuesta, totalesPropuesta, propuestaHtml, oportunidadesParaPropuesta, alcanceConIdea, dolares, esc } from '../src/lib/propuesta.js'
 
 const NOW = new Date(2026, 10, 19, 12, 0)
 const project = { id: 'p1', name: 'Evoria' }
@@ -48,6 +48,25 @@ test('lo marcado "Agregar a la propuesta: Sí" viene tildado; el "No" queda sin 
   ]
   const m = armarPropuesta({ project, client, items: marcadas, now: NOW })
   assert.deepEqual(m.bloques.map((b) => [b.id, b.incluir]), [['x', true], ['y', false], ['z', false]])
+})
+
+test('"Sí" anota la idea en el Alcance, una sola vez y sin precios', () => {
+  const o = op({ id: 'a', titulo: 'Academia', porQue: 'Cursos para la comunidad', montoUsd: 5000 })
+  const p1 = alcanceConIdea({ id: 'p1', scopeNotes: [{ id: 'n0', text: 'Nota previa' }] }, o, true, 'u1', NOW)
+  assert.equal(p1.scopeNotes.length, 2)
+  assert.deepEqual(p1.scopeNotes[1], { id: 'scope-op-a', opId: 'a', text: 'Idea para el contrato: Academia — Cursos para la comunidad', date: NOW.toISOString(), authorId: 'u1' })
+  assert.ok(!p1.scopeNotes[1].text.includes('5000') && !p1.scopeNotes[1].text.includes('$'))
+  assert.equal(alcanceConIdea(p1, o, true, 'u1', NOW), p1, 'marcar de nuevo no la duplica')
+})
+
+test('"No" o descartar saca la idea del Alcance y no toca las otras notas', () => {
+  const o = op({ id: 'a', titulo: 'Academia' })
+  const con = alcanceConIdea({ id: 'p1', scopeNotes: [{ id: 'n0', text: 'Nota previa' }] }, o, true, 'u1', NOW)
+  const sin = alcanceConIdea(con, o, false)
+  assert.deepEqual(sin.scopeNotes.map((n) => n.id), ['n0'])
+  const intacto = { id: 'p1', scopeNotes: [{ id: 'n0' }] }
+  assert.equal(alcanceConIdea(intacto, o, false), intacto)
+  assert.deepEqual(alcanceConIdea({ id: 'p1' }, o, true, '', NOW).scopeNotes.length, 1)
 })
 
 test('totales: lo mensual va aparte y lo destildado no suma', () => {

@@ -42,6 +42,23 @@ export function oportunidadesParaPropuesta(items = [], projectId) {
     .sort((a, b) => orden(a) - orden(b) || (a.orden || 0) - (b.orden || 0))
 }
 
+/**
+ * "Idea del contrato" (pedido de Nacho, 19/11): lo que se marca "Agregar a la propuesta: Sí" queda
+ * anotado en el Alcance del proyecto (project.scopeNotes). La nota se vincula con `opId` y tiene id
+ * determinístico: marcar dos veces no la duplica y pasar a "No" (o descartar) la saca. Sin precios.
+ */
+export function alcanceConIdea(project, op, si, authorId = '', now = new Date()) {
+  const notas = project?.scopeNotes || []
+  const resto = notas.filter((n) => n.opId !== op.id)
+  if (si !== true) return resto.length === notas.length ? project : { ...project, scopeNotes: resto }
+  if (notas.some((n) => n.opId === op.id)) return project
+  const detalle = [op.titulo, op.porQue].filter(Boolean).join(' — ')
+  return {
+    ...project,
+    scopeNotes: [...notas, { id: 'scope-op-' + op.id, opId: op.id, text: `Idea para el contrato: ${detalle}`, date: now.toISOString(), authorId: authorId || '' }],
+  }
+}
+
 /** Modelo editable de la propuesta: todo texto que el usuario puede tocar antes de bajar el PDF. */
 export function armarPropuesta({ project, client = null, items = [], now = new Date() } = {}) {
   const ops = oportunidadesParaPropuesta(items, project?.id)

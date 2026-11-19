@@ -6,6 +6,7 @@ import { fmtDay } from '../lib/stores.js'
 import { esSoloLectura } from '../lib/soloLectura.js'
 import { vistaOportunidades, categoriaMeta, marcarDescartada, deshacerDescarte, marcarPropuesta, normalizeOpportunity } from '../lib/oportunidades.js'
 import { PropuestaModal } from './Propuesta.jsx'
+import { alcanceConIdea } from '../lib/propuesta.js'
 
 /*
  * "Oportunidades" del proyecto (call del 13/11): la IA lee el proyecto y propone qué más
@@ -239,7 +240,7 @@ const Tarjeta = forwardRef(function Tarjeta({ op, puede, onOfrecer, onDescartar,
         : puede ? (
           <>
           <div className="op-prop" role="group" aria-label={`Agregar ${op.titulo} a la propuesta`}>
-            <span>Agregar a la propuesta{op.enPropuesta === true && <small>Queda aunque vuelvan a pensar</small>}</span>
+            <span>Agregar a la propuesta{op.enPropuesta === true && <small>Queda aunque vuelvan a pensar · anotada en el Alcance</small>}</span>
             <div className="op-seg">
               <button type="button" className="si" aria-pressed={op.enPropuesta === true} onClick={() => onPropuesta(op, true)}>Sí</button>
               <button type="button" className="no" aria-pressed={op.enPropuesta === false} onClick={() => onPropuesta(op, false)}>No</button>
@@ -258,7 +259,7 @@ const Tarjeta = forwardRef(function Tarjeta({ op, puede, onOfrecer, onDescartar,
 })
 
 export function OportunidadesSection({ project, compact = false, embedded = false }) {
-  const { data, myId, supabase, opportunityStore } = useApp()
+  const { data, myId, supabase, opportunityStore, projectStore } = useApp()
   const reduce = useReducedMotion()
   const id = useId()
   const me = (data.team || []).find((u) => u.id === myId)
@@ -319,9 +320,14 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
 
   const elegirCliente = (op) => ofrecer(op, null)
 
+  // Idea del contrato: lo marcado "Sí" queda anotado en el Alcance del proyecto; "No" o descartar la saca.
+  const anotarEnAlcance = (op, si) => {
+    if (projectStore) projectStore.patch(project.id, (p) => alcanceConIdea(p, op, si, myId || ''))
+  }
   const descartar = (op) => {
     if (!puede || !opportunityStore) return
     opportunityStore.patch(op.id, (x) => marcarDescartada(x, myId || null))
+    anotarEnAlcance(op, false)
   }
   const proponer = (op, si) => {
     if (!puede || !opportunityStore) return
@@ -329,6 +335,7 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
     const hecho = opportunityStore.patch(op.id, (x) => marcarPropuesta(x, si, myId || null))
     // Recién pensada: puede no haber llegado todavía por realtime al store.
     if (!hecho && opportunityStore.upsert) opportunityStore.upsert(marcarPropuesta(op, si, myId || null))
+    anotarEnAlcance(op, si)
   }
   const deshacer = (op) => {
     if (!puede || !opportunityStore) return
