@@ -5,6 +5,7 @@ import { I2 } from '../ui/icons2.jsx'
 import { fmtDay } from '../lib/stores.js'
 import { esSoloLectura } from '../lib/soloLectura.js'
 import { vistaOportunidades, categoriaMeta, marcarDescartada, deshacerDescarte, marcarPropuesta, normalizeOpportunity } from '../lib/oportunidades.js'
+import { PropuestaModal } from './Propuesta.jsx'
 
 /*
  * "Oportunidades" del proyecto (call del 13/11): la IA lee el proyecto y propone qué más
@@ -270,6 +271,7 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
   const [local, setLocal] = useState({})
   const [candidatos, setCandidatos] = useState({})
   const [verVistas, setVerVistas] = useState(false)
+  const [propuestaAbierta, setPropuestaAbierta] = useState(false)
   const vivo = useRef(true)
   useEffect(() => { vivo.current = true; return () => { vivo.current = false } }, [])
   useEffect(() => { setRecien(null); setLocal({}); setCandidatos({}); setError(''); setVerVistas(false) }, [project.id])
@@ -334,6 +336,13 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
   }
 
   const generadaPor = v.nuevas[0]?.generadaPor
+  const client = (data.clients || []).find((c) => c.id === project.clientId) || null
+  // Armar la propuesta no escribe nada (es un documento que se baja), así que no pide `puede`.
+  const botonPropuesta = (
+    <button type="button" className="op-again" onClick={() => setPropuestaAbierta(true)} title="Arma la propuesta comercial en PDF con las oportunidades">
+      <I2.pdf width={13} height={13} /> Crear propuesta
+    </button>
+  )
   return (
     <section className={`op-sec${compact ? ' compact' : ''}`} aria-labelledby={`${id}-t`} aria-busy={pensando}>
       <style>{CSS}</style>
@@ -344,6 +353,7 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
           {hay && (
             <span className="op-meta">
               {v.generadaAt && <span>Pensadas el {fmtDay(v.generadaAt)}{generadaPor ? ` por ${who(generadaPor)}` : ''}</span>}
+              {botonPropuesta}
               {puede && (
                 <button type="button" className="op-again" onClick={generar} disabled={pensando} aria-busy={pensando}>
                   <I2.refresh width={13} height={13} /> {pensando ? 'Pensando…' : 'Volver a pensar'}
@@ -358,6 +368,7 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
       {embedded && hay && (
         <div className="op-bar">
           {v.generadaAt && <span>Pensadas el {fmtDay(v.generadaAt)}{generadaPor ? ` por ${who(generadaPor)}` : ''}</span>}
+          {botonPropuesta}
           {puede && (
             <button type="button" className="op-again" onClick={generar} disabled={pensando} aria-busy={pensando}>
               <I2.refresh width={13} height={13} /> {pensando ? 'Pensando…' : 'Volver a pensar'}
@@ -387,14 +398,18 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
             <p>La IA lee el roadmap, las notas del servicio, las tareas pendientes y lo que ya pagó, y propone de 3 a 5 cosas concretas para ofrecerle.</p>
           </div>
           {puede && <button type="button" className="op-go" onClick={generar}><I2.sparkle width={15} height={15} /> Buscar oportunidades</button>}
+          {botonPropuesta}
         </div>
       )}
 
-      {compact && hay && puede && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-          <button type="button" className="op-again" onClick={generar} disabled={pensando} aria-busy={pensando}>
-            <I2.refresh width={13} height={13} /> {pensando ? 'Pensando…' : 'Volver a pensar'}
-          </button>
+      {compact && hay && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
+          {botonPropuesta}
+          {puede && (
+            <button type="button" className="op-again" onClick={generar} disabled={pensando} aria-busy={pensando}>
+              <I2.refresh width={13} height={13} /> {pensando ? 'Pensando…' : 'Volver a pensar'}
+            </button>
+          )}
         </div>
       )}
 
@@ -437,6 +452,7 @@ export function OportunidadesSection({ project, compact = false, embedded = fals
           )}
         </>
       )}
+      <PropuestaModal open={propuestaAbierta} onClose={() => setPropuestaAbierta(false)} project={project} client={client} items={items} />
     </section>
   )
 }
