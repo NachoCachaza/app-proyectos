@@ -60,7 +60,8 @@ import RecorridoView, { UpsellModal, UpsellPanel } from './journey/RecorridoView
 import { CloserNotesPanel } from './journey/CloserNotes.jsx'
 import ClarityControl from './journey/ClarityControl.jsx'
 import { NotesView, ProjectNotesBlock } from './notes/ServiceNotes.jsx'
-import { OportunidadesSection } from './oportunidades/Oportunidades.jsx'
+import { Fase2Section } from './fase2/Fase2.jsx'
+import { normalizarEntradaStore } from './lib/fase2.js'
 import OportunidadesView from './oportunidades/OportunidadesView.jsx'
 import { normalizeOpportunity } from './lib/oportunidades.js'
 import { useServiceNotes } from './notes/useServiceNotes.js'
@@ -7353,7 +7354,7 @@ function ProjectDetail({ projectId, onBack, onOpenNotes }) {
         {project.kind !== 'interno' && <UpsellPanel project={project} onOpen={() => setUpsellOpen(true)} />}
         {project.kind !== 'interno' && <CloserNotesPanel project={project} />}
         {project.kind !== 'interno' && <ProjectNotesBlock project={project} onOpenAll={onOpenNotes} />}
-        {project.kind !== 'interno' && <OportunidadesSection project={project} />}
+        {project.kind !== 'interno' && <Fase2Section project={project} />}
 
         {/* AVANCE DEL PLAN — acordeón de semanas, tachado + % en vivo para el
             cliente. Tachar una tarea marca "último avance" del proyecto. */}
@@ -9486,6 +9487,7 @@ function AppShell({ session, onLogout }) {
   const mvpStore = useRowCollection({ table: 'mvps', normalize: normalizeMvp, seed: () => [], cacheKey: 'rc_mvps_v1' })
   const serviceNoteStore = useServiceNotes(supabase)
   const opportunityStore = useRowCollection({ table: 'project_opportunities', normalize: normalizeOpportunity, seed: () => [], cacheKey: 'rc_oportunidades_v1' })
+  const fase2Store = useRowCollection({ table: 'project_fase2', normalize: normalizarEntradaStore, seed: () => [], cacheKey: 'rc_fase2_v1' })
 
   // Vista de solo lectura con la forma histórica de `data` — para que TODOS los
   // reads `data.projects`/`data.team`/… sigan funcionando sin tocarlos. Toda
@@ -9504,11 +9506,11 @@ function AppShell({ session, onLogout }) {
     agencyAccounts: agencyAccountStore.items,
     mvps: mvpStore.items,
   }), [teamStore.items, clientStore.items, projectStore.items, callStore.items, activityStore.items, chatStore.items, sops, taskStore.tasks, videoStore.items, agencyAccountStore.items, mvpStore.items])
-  const collectionStores = { projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore, agencyAccountStore, mvpStore, opportunityStore }
+  const collectionStores = { projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore, agencyAccountStore, mvpStore, opportunityStore, fase2Store }
   const botComms = useBotComms()   // proyecto → último mensaje del equipo en WhatsApp (del bot)
 
   // Badge de sync: agregado del estado de todas las tablas.
-  const allStores = [projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore, agencyAccountStore, mvpStore, opportunityStore]
+  const allStores = [projectStore, clientStore, teamStore, callStore, activityStore, sopCatStore, sopProcStore, chatStore, videoStore, agencyAccountStore, mvpStore, opportunityStore, fase2Store]
   const anyLoading = !planStore.plansReady || !taskStore.tasksReady || allStores.some((s) => !s.ready)
   const anySaving = allStores.some((s) => s.saving)
   const sync = !cloudEnabled ? 'local' : anyLoading ? 'loading' : anySaving ? 'saving' : 'saved'

@@ -272,3 +272,18 @@ test('la IA sabe qué ya está en la propuesta para no repetirlo', () => {
   const c = armarContexto({ ...base(), previas: [{ titulo: 'Plan anual de soporte', estado: 'nueva', enPropuesta: true }] })
   assert.ok(c.includes('Plan anual de soporte: ya está en la propuesta'))
 })
+
+test('armarContexto suma la sección Fase 2 con el plan, las calls y las notas; sin ellas no aparece', () => {
+  const fase2 = [
+    { id: 'plan-p1', projectId: 'p1', kind: 'plan', porQueAhora: 'Cerró el MVP', generadoAt: daysAgo(1), basadoEn: [], queOfrecerPrimero: [{ titulo: 'Panel de ventas', razon: 'Lo pidió' }] },
+    { id: 'c1', projectId: 'p1', kind: 'call', at: daysAgo(3), estado: 'lista', titulo: 'Seguimiento', analisis: { resumen: 'Habló de ventas', implementar: [{ texto: 'Alertas por mail', cita: 'Quiero enterarme al toque' }] } },
+    { id: 'n1', projectId: 'p1', kind: 'nota', text: 'Quiere sumar una segunda marca', at: daysAgo(5) },
+  ]
+  const con = armarContexto({ ...base(), now: NOW, fase2 })
+  assert.ok(con.includes('## Fase 2: calls y notas con el cliente'))
+  assert.ok(con.includes('Plan de Fase 2'))
+  assert.ok(con.includes('Alertas por mail ("Quiero enterarme al toque")'))
+  assert.ok(con.includes('Quiere sumar una segunda marca'))
+  const sin = armarContexto({ ...base(), now: NOW })
+  assert.ok(!sin.includes('Fase 2: calls y notas con el cliente'))
+})
