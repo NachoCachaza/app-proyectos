@@ -472,3 +472,15 @@ export function lineasFase2(items, { tope = 7000 } = {}) {
   }
   return out
 }
+
+/* ─────────────────────── Calls que se quedaron trabadas ─────────────────────── */
+
+/* La función analiza en segundo plano y avisa del error a los ~5,5 minutos como mucho. Si pasó más que
+ * esto sin que la fila se mueva (cada escritura de la función sube updatedAt), la call se trabó. */
+export const MAX_ESPERA_CALL_MS = 6 * 60 * 1000
+
+export function llamadaTrabada(e, now = new Date(), max = MAX_ESPERA_CALL_MS) {
+  if (!e || e.kind !== 'call' || (e.estado !== 'bajando' && e.estado !== 'analizando')) return false
+  const t = Date.parse(e.updatedAt || e.at || '')
+  return Number.isFinite(t) && now.getTime() - t > max
+}

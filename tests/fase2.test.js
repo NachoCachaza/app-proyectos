@@ -344,3 +344,22 @@ test('Fase 2: la ven fundadores y lectura; la edita sólo el acceso completo; un
   assert.equal(puedeVerFase2(null), false)
   assert.equal(puedeEditarFase2(undefined), false)
 })
+
+import { llamadaTrabada, MAX_ESPERA_CALL_MS } from '../src/lib/fase2.js'
+
+test('llamadaTrabada: sólo una call en curso que lleva más de seis minutos sin moverse', () => {
+  const t0 = '2026-11-23T10:00:00.000Z'
+  const ahora = (min) => new Date(Date.parse(t0) + min * 60 * 1000)
+  const analizando = { kind: 'call', estado: 'analizando', updatedAt: t0, at: t0 }
+  assert.equal(MAX_ESPERA_CALL_MS, 6 * 60 * 1000)
+  assert.equal(llamadaTrabada(analizando, ahora(2)), false)
+  assert.equal(llamadaTrabada(analizando, ahora(6)), false)
+  assert.equal(llamadaTrabada(analizando, ahora(7)), true)
+  assert.equal(llamadaTrabada({ ...analizando, estado: 'bajando' }, ahora(10)), true)
+  assert.equal(llamadaTrabada({ ...analizando, estado: 'lista' }, ahora(60)), false)
+  assert.equal(llamadaTrabada({ ...analizando, estado: 'error' }, ahora(60)), false)
+  assert.equal(llamadaTrabada({ kind: 'nota', estado: 'analizando', updatedAt: t0 }, ahora(60)), false)
+  assert.equal(llamadaTrabada({ ...analizando, updatedAt: null, at: t0 }, ahora(7)), true)
+  assert.equal(llamadaTrabada({ kind: 'call', estado: 'analizando' }, ahora(60)), false)
+  assert.equal(llamadaTrabada(null, ahora(60)), false)
+})
