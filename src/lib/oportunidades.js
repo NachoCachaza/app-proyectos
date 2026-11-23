@@ -17,6 +17,7 @@ import { projectProgress } from './progress.js'
 import { storesSummary } from './stores.js'
 import { noteType } from './serviceNotes.js'
 import { openCloserNotes } from './closerNotes.js'
+import { lineasFase2 } from './fase2.js'
 
 export const MAX_OPORTUNIDADES = 5
 export const MODELO = 'claude-opus-5-5'
@@ -99,7 +100,7 @@ function seccion(titulo, lineas) {
 
 const TOPE_CONTEXTO = 36000
 
-export function armarContexto({ project, client, plan, tasks = [], notes = [], previas = [], now = new Date() } = {}) {
+export function armarContexto({ project, client, plan, tasks = [], notes = [], previas = [], fase2 = [], now = new Date() } = {}) {
   const p = unrow(project) || {}
   const c = unrow(client) || {}
   const pl = unrow(plan) || null
@@ -165,6 +166,7 @@ export function armarContexto({ project, client, plan, tasks = [], notes = [], p
       .filter((n) => n && n.body)
       .sort((a, b) => String(b.notedAt || '').localeCompare(String(a.notedAt || '')))
       .slice(0, 15).map((n) => `- ${noteType(n.type).label}: ${clip(n.body, 1200)}`)),
+    seccion('Fase 2: calls y notas con el cliente', lineasFase2(fase2)),
     seccion('Para el closer', openCloserNotes(p).slice(0, 6).map((n) => `- ${clip(n.text, 300)}`)),
     seccion('Ya ofrecido o descartado', [
       ...['plan', 'fase2', 'nuevo', 'marketing'].map((k) => up[k] && `- ${offerLabel(k)}: ${upsellStatusMeta(up[k].status).label}${up[k].note ? ` (${clip(up[k].note, 200)})` : ''}`),

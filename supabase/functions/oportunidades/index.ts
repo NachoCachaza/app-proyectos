@@ -14,7 +14,7 @@
 // La lógica pura vive en src/lib/oportunidades.js: se despliega desde la raíz del repo
 //   supabase functions deploy oportunidades --project-ref yzmtzyuncekspgtsetwk --use-api --no-verify-jwt
 // y hay que redesplegarla si cambian oportunidades.js, journey.js, stages.js, lifecycle.js,
-// progress.js, stores.js, serviceNotes.js o closerNotes.js.
+// progress.js, stores.js, serviceNotes.js, closerNotes.js o fase2.js.
 //
 // Secrets: ANTHROPIC_API_KEY (principal) y ANTHROPIC_API_KEY_RESPALDO (otra cuenta). 400 de
 // saldo, 401, 403 y 429 pasan a la de respaldo; 5xx y red no.
@@ -99,12 +99,13 @@ async function generar(proyecto: string, yo: Yo): Promise<Response> {
   if (error) return json({ error: 'No pude leer el proyecto.' }, 500)
   if (!p) return json({ error: 'No encontré el proyecto.' }, 404)
 
-  const [cli, plan, tareas, notas, previas] = await Promise.all([
+  const [cli, plan, tareas, notas, previas, fase2] = await Promise.all([
     p.data?.clientId ? db.from('clients').select('id, data').eq('id', p.data.clientId).is('deleted_at', null).maybeSingle() : Promise.resolve({ data: null }),
     p.data?.planId ? db.from('plans').select('id, data').eq('id', p.data.planId).is('deleted_at', null).maybeSingle() : Promise.resolve({ data: null }),
     db.from('tasks').select('id, data').is('deleted_at', null).eq('data->>projectId', proyecto).limit(200),
     db.from('project_service_notes').select('type, body, noted_at').eq('project_id', proyecto).is('deleted_at', null).order('noted_at', { ascending: false }).limit(30),
     db.from('project_opportunities').select('id, data').eq('project_id', proyecto).is('deleted_at', null),
+    db.from('project_fase2').select('id, data').eq('project_id', proyecto).is('deleted_at', null).limit(300),
   ])
 
   const filasPrevias = (previas.data ?? []).map((r) => normalizeOpportunity(r.data))
@@ -117,6 +118,7 @@ async function generar(proyecto: string, yo: Yo): Promise<Response> {
     project: p, client: cli.data, plan: plan.data, tasks: tareas.data ?? [],
     notes: (notas.data ?? []).map((n) => ({ type: n.type, body: n.body, notedAt: n.noted_at })),
     previas: filasPrevias.filter(quedaAlRepensar),
+    fase2: (fase2.data ?? []).map((r) => ({ ...r.data, id: r.id })),
     now: new Date(),
   })
 
