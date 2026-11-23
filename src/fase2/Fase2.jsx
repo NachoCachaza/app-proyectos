@@ -6,7 +6,7 @@ import { esSoloLectura } from '../lib/soloLectura.js'
 import { normalizeOpportunity } from '../lib/oportunidades.js'
 import {
   vistaFase2, nuevaNota, nuevaCall, marcarBorrada, vincularItem, itemAOportunidad, hayParecida,
-  resolverLink, puedeVerFase2, puedeEditarFase2, MIN_TEXTO_PEGADO, MAX_NOTA, MAX_TEXTO_CALL,
+  resolverLink, puedeVerFase2, puedeEditarFase2, llamadaTrabada, MIN_TEXTO_PEGADO, MAX_NOTA, MAX_TEXTO_CALL,
 } from '../lib/fase2.js'
 
 /*
@@ -122,10 +122,11 @@ function Items({ titulo, items, onOportunidad, puede, lista, entrada }) {
   )
 }
 
-function Llamada({ e, puede, puedeIA, onReintentar, onBorrar, onOportunidad }) {
+function Llamada({ e, ahora, puede, puedeIA, onReintentar, onBorrar, onOportunidad }) {
   const [verTexto, setVerTexto] = useState(false)
   const a = e.analisis
-  const enCurso = e.estado === 'bajando' || e.estado === 'analizando'
+  const trabada = llamadaTrabada(e, ahora)
+  const enCurso = (e.estado === 'bajando' || e.estado === 'analizando') && !trabada
   return (
     <article className="f2-call" aria-busy={enCurso}>
       <div className="f2-meta">
@@ -137,7 +138,13 @@ function Llamada({ e, puede, puedeIA, onReintentar, onBorrar, onOportunidad }) {
         {puede && <button type="button" className="f2-link sp" onClick={() => onBorrar(e)}>Borrar</button>}
       </div>
       {e.titulo && <h3>{e.titulo}</h3>}
-      {enCurso && <p className="f2-lead" role="status">{ESTADO_TXT[e.estado]} Tarda alrededor de medio minuto.</p>}
+      {enCurso && <p className="f2-lead" role="status">{ESTADO_TXT[e.estado]} Con una call larga puede tardar unos minutos: podés seguir con otra cosa.</p>}
+      {trabada && (
+        <div className="f2-stale" role="alert">
+          <I2.alert width={14} height={14} /><span>Se está tardando demasiado y no hay novedades. Probablemente se cortó.</span>
+          {puedeIA && <button type="button" className="f2-again" onClick={() => onReintentar(e)}>Probar de nuevo</button>}
+        </div>
+      )}
       {e.estado === 'error' && (
         <div className="f2-stale" role="alert">
           <I2.alert width={14} height={14} /><span style={{ flex: 1, minWidth: 0 }}>{e.error || 'Algo falló.'}</span>
@@ -252,14 +259,31 @@ export function Fase2Section({ project, compact = false }) {
 
   const v = useMemo(() => vistaFase2(fase2Store?.items || [], project.id), [fase2Store?.items, project.id])
 
-  /* Corre la función sobre una call ya creada. Si la función respondió con error, ella dejó anotada
-   * la falla en la fila: se toma lo que devolvió. Si ni llegó, se marca acá. */
+  // Las calls en curso se resuelven en el servidor, en segundo plano: mientras haya alguna se mira su fila
+  // cada pocos segundos (por si el realtime no llega) y anda el reloj que detecta las que se trabaron.
+  const [ahora, setAhora] = useState(() => new Date())
+  const idsEnCurso = v.entradas.filter((e) => e.kind === 'call' && (e.estado === 'bajando' || e.estado === 'analizando')).map((e) => e.id).join(',')
+  useEffect(() => {
+    if (!idsEnCurso) return undefined
+    let activo = true
+    const t = setInterval(async () => {
+      setAhora(new Date())
+      if (!supabase || !fase2Store?.mergeRemote) return
+      const { data: filas } = await supabase.from('project_fase2').select('id, data').in('id', idsEnCurso.split(','))
+      if (!activo) return
+      for (const f of filas || []) if (f.data) fase2Store.mergeRemote({ ...f.data, id: f.id })
+    }, 5000)
+    return () => { activo = false; clearInterval(t) }
+  }, [supabase, idsEnCurso])
+
+  /* Le pide a la función que baje y analice una call ya creada. Ella contesta enseguida y sigue en
+   * segundo plano: el resultado (o el error) llega por la fila, por el realtime y por la consulta de
+   * abajo. Acá sólo se atiende un error de verdad al pedirlo (sin permiso, call inexistente, sin red). */
   const correr = async (entrada) => {
     const r = await llamarFase2(supabase, { accion: 'analizar_call', proyecto: project.id, entrada: entrada.id })
-    if (!vivo.current) return
-    if (r.data?.entrada) { fase2Store.upsert(r.data.entrada); return }
-    if (r.entrada) { fase2Store.upsert(r.entrada); return }
-    if (!r.servidor) fase2Store.patch(entrada.id, (x) => ({ ...x, estado: 'error', error: r.error }))
+    if (!vivo.current || !r.error) return
+    if (r.entrada) { fase2Store.mergeRemote(r.entrada); return } // la función ya anotó la falla en la fila
+    fase2Store.patch(entrada.id, (x) => (x.estado === 'bajando' || x.estado === 'analizando' ? { ...x, estado: 'error', error: r.error } : x))
   }
 
   const crearYCorrer = async (entrada) => {
@@ -307,7 +331,7 @@ export function Fase2Section({ project, compact = false }) {
     if (!vivo.current) return
     setArmando(false)
     if (r.error) { setError(r.error); return }
-    if (r.data?.plan) fase2Store.upsert(r.data.plan)
+    if (r.data?.plan) fase2Store.mergeRemote(r.data.plan)
   }
 
   const aOportunidad = (entrada, lista, indice) => {
@@ -401,7 +425,7 @@ export function Fase2Section({ project, compact = false }) {
       {v.entradas.length > 0 && (
         <div className="f2-feed">
           {v.entradas.map((e) => (e.kind === 'call'
-            ? <Llamada key={e.id} e={e} puede={puede} puedeIA={puedeIA} onReintentar={reintentar} onBorrar={borrar} onOportunidad={aOportunidad} />
+            ? <Llamada key={e.id} e={e} ahora={ahora} puede={puede} puedeIA={puedeIA} onReintentar={reintentar} onBorrar={borrar} onOportunidad={aOportunidad} />
             : (
               <article key={e.id} className="f2-nota">
                 <p><small>Nota del {fmtDay(e.at)}{e.by ? ` · ${who(e.by)}` : ''}</small>{e.text}</p>

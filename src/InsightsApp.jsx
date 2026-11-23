@@ -2239,7 +2239,21 @@ function useRowCollection({ table, normalize = (x) => x, seed = () => [], cacheK
     return { error }
   }
 
-  return { items, ready, saving, create, patch, upsert, remove }
+  // Toma una fila tal como está en el servidor (la escribió otro: una función, otra pestaña) SIN volver a
+  // guardarla: misma regla que el realtime, sólo gana si es más nueva. `upsert` en cambio guarda de vuelta,
+  // y una copia vieja podría pisar lo que el servidor escribió después.
+  const mergeRemote = (incoming) => {
+    if (!incoming || !incoming.id || deletedIds.current.has(incoming.id)) return
+    const norm = normalize(incoming)
+    applyLocal((cur) => {
+      const idx = cur.findIndex((x) => x.id === norm.id)
+      if (idx === -1) return [norm, ...cur]
+      if ((norm.updatedAt || '') <= (cur[idx].updatedAt || '')) return cur
+      const nx = [...cur]; nx[idx] = norm; return nx
+    })
+  }
+
+  return { items, ready, saving, create, patch, upsert, remove, mergeRemote }
 }
 
 /* Normalizadores por colección — espejan lo que hacía migrate() cuando estas

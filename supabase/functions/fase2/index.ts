@@ -4,7 +4,8 @@
 //
 // POST {accion:"analizar_call", proyecto, entrada} → la pantalla ya creó la entrada (kind "call").
 //   Si es de Fathom y todavía no tiene texto, baja la call con las cuentas de fathom_accounts; después
-//   la analiza con Claude y guarda el resultado en la fila (fase2_guardar_call).
+//   la analiza con Claude y guarda el resultado en la fila (fase2_guardar_call). Contesta 202 enseguida y
+//   sigue en segundo plano (EdgeRuntime.waitUntil): el resultado o el error queda en la fila.
 // POST {accion:"armar_plan", proyecto}              → Claude arma "Cómo llevarlo a Fase 2" con las
 //   notas y los análisis del proyecto; lo guarda en la fila 'plan-<proyecto>' (fase2_guardar_plan).
 //
@@ -67,19 +68,19 @@ function errorDeCuenta(e: unknown): boolean {
   return e.status === 400 && /credit|billing/i.test(e.message)
 }
 
-async function pensar(sistema: string, esquema: unknown, usuario: string) {
+async function pensar(sistema: string, esquema: unknown, usuario: string, opc: { maxTokens?: number; timeoutMs?: number } = {}) {
   const keys = [Deno.env.get('ANTHROPIC_API_KEY'), Deno.env.get('ANTHROPIC_API_KEY_RESPALDO')].filter((k): k is string => !!k)
   if (!keys.length) throw new Error('sin_key')
   let ultimo: unknown = null
   for (const apiKey of keys) {
-    const client = new Anthropic({ apiKey, timeout: 140_000, maxRetries: 1 })
+    const client = new Anthropic({ apiKey, timeout: opc.timeoutMs ?? 120_000, maxRetries: 0 })
     try {
       const pedido = {
         model: MODELO,
-        max_tokens: 16000,
+        max_tokens: opc.maxTokens ?? 10000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
-        output_config: { effort: 'high', format: { type: 'json_schema', schema: esquema } },
+        output_config: { effort: 'medium', format: { type: 'json_schema', schema: esquema } },
         system: sistema,
         messages: [{ role: 'user', content: usuario }],
       }
@@ -185,54 +186,89 @@ async function fallaCall(id: string, msg: string, status: number): Promise<Respo
   return json({ error: msg, entrada: fila ?? null }, status)
 }
 
+// EdgeRuntime existe en Supabase: deja que el trabajo siga después de haber contestado.
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined
+// Supabase corta una función a los 400 s: el error se anota antes, para que la tarjeta nunca quede trabada.
+const TOPE_SEGUNDO_PLANO_MS = 330_000
+
+/**
+ * El trabajo pesado de una call: baja el texto (si hace falta), lo analiza y anota en la fila el
+ * resultado o el error. Corre en segundo plano y no devuelve nada: la pantalla lo ve por la fila
+ * (realtime y consulta cada pocos segundos). Nunca tira: todo error queda anotado en la tarjeta.
+ */
+async function trabajarCall(proyecto: string, e: Record<string, any>): Promise<void> {
+  const falla = async (msg: string) => { await guardarCall(e.id, { estado: 'error', error: msg }) }
+  try {
+    let texto: string = e.texto
+    const parche: Record<string, unknown> = {}
+    if (e.origen === 'fathom' && !texto) {
+      const link = resolverLink(e.link)
+      if (!link.ok) return await falla(link.error)
+      const hallada = await buscarReunion(link)
+      if (!hallada) return await falla('No encontré esa call en las cuentas de Fathom cargadas. Pegá el texto de la call para analizarla igual.')
+      const m = hallada.meeting
+      const t = textoDeReunion(m)
+      if (!t.texto) return await falla('La call no trae resumen ni transcripción todavía. Probá de nuevo en unos minutos.')
+      texto = t.texto
+      const cuando = m.recording_start_time || m.scheduled_start_time || m.created_at || null
+      Object.assign(parche, {
+        texto, titulo: String(m.title || m.meeting_title || '').slice(0, 160) || null,
+        fathomId: String(m.recording_id ?? m.id ?? '') || null,
+        ...(cuando ? { at: new Date(cuando).toISOString() } : {}),
+      })
+      if (hallada.fathomCallId && !hallada.yaTieneProyecto) {
+        await db.from('fathom_calls').update({ project_id: proyecto }).eq('id', hallada.fathomCallId).is('project_id', null)
+      }
+    }
+    await guardarCall(e.id, { ...parche, estado: 'analizando', error: null })
+
+    const contexto = await contextoDelProyecto(proyecto, [])
+    if (contexto == null) return await falla('No encontré el proyecto.')
+
+    let r
+    try {
+      r = await pensar(
+        SISTEMA_CALL, ESQUEMA_CALL,
+        `Este es el proyecto:\n\n${contexto}\n\n---\n\nEsta es la llamada con el cliente:\n\n${limpiarTexto(texto)}\n\nBajá la llamada a tierra.`,
+        { maxTokens: 12000, timeoutMs: 150_000 },
+      )
+    } catch (err) {
+      return await falla(errorIA(err).msg)
+    }
+    const analisis = normalizarAnalisis(r.datos, { now: new Date(), modelo: r.modelo })
+    if (!analisis) return await falla('La IA no encontró nada concreto en esta llamada.')
+    await guardarCall(e.id, { estado: 'lista', error: null, analisis })
+  } catch (err) {
+    console.error('[fase2] trabajarCall falló:', (err as Error)?.message || err)
+    await falla('Algo falló al analizar la call. Probá de nuevo.')
+  }
+}
+
 async function analizarCall(proyecto: string, entradaId: string): Promise<Response> {
   const { data: fila } = await db.from('project_fase2').select('id, data').eq('id', entradaId).eq('project_id', proyecto).is('deleted_at', null).maybeSingle()
   const e = fila ? normalizarEntrada({ ...fila.data, id: fila.id }) : null
   if (!e || e.kind !== 'call') return json({ error: 'No encontré esa call.' }, 404)
-
-  let texto = e.texto
-  const parche: Record<string, unknown> = {}
-  if (e.origen === 'fathom' && !texto) {
+  // Lo que se puede revisar sin esperar se contesta ya.
+  if (e.origen === 'fathom' && !e.texto) {
     const link = resolverLink(e.link)
     if (!link.ok) return await fallaCall(e.id, link.error, 400)
-    const hallada = await buscarReunion(link)
-    if (!hallada) {
-      return await fallaCall(e.id, 'No encontré esa call en las cuentas de Fathom cargadas. Pegá el texto de la call para analizarla igual.', 422)
-    }
-    const m = hallada.meeting
-    const t = textoDeReunion(m)
-    if (!t.texto) return await fallaCall(e.id, 'La call no trae resumen ni transcripción todavía. Probá de nuevo en unos minutos.', 422)
-    texto = t.texto
-    const cuando = m.recording_start_time || m.scheduled_start_time || m.created_at || null
-    Object.assign(parche, {
-      texto, titulo: String(m.title || m.meeting_title || '').slice(0, 160) || null,
-      fathomId: String(m.recording_id ?? m.id ?? '') || null,
-      ...(cuando ? { at: new Date(cuando).toISOString() } : {}),
-    })
-    if (hallada.fathomCallId && !hallada.yaTieneProyecto) {
-      await db.from('fathom_calls').update({ project_id: proyecto }).eq('id', hallada.fathomCallId).is('project_id', null)
-    }
   }
-  await guardarCall(e.id, { ...parche, estado: 'analizando', error: null })
 
-  const contexto = await contextoDelProyecto(proyecto, [])
-  if (contexto == null) return await fallaCall(e.id, 'No encontré el proyecto.', 404)
-
-  let r
-  try {
-    r = await pensar(
-      SISTEMA_CALL, ESQUEMA_CALL,
-      `Este es el proyecto:\n\n${contexto}\n\n---\n\nEsta es la llamada con el cliente:\n\n${limpiarTexto(texto)}\n\nBajá la llamada a tierra.`,
-    )
-  } catch (err) {
-    const f = errorIA(err)
-    return await fallaCall(e.id, f.msg, f.status)
-  }
-  const analisis = normalizarAnalisis(r.datos, { now: new Date(), modelo: r.modelo })
-  if (!analisis) return await fallaCall(e.id, 'La IA no encontró nada concreto en esta llamada.', 422)
-  const guardada = await guardarCall(e.id, { estado: 'lista', error: null, analisis })
-  if (!guardada) return json({ error: 'No pude guardar el análisis.' }, 500)
-  return json({ ok: true, entrada: guardada })
+  // Se contesta enseguida y el resto sigue en segundo plano: una call larga puede tardar más que el
+  // límite de espera de una respuesta (~150 s) y la tarjeta quedaba trabada en "Analizando".
+  let terminado = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const trabajo = trabajarCall(proyecto, e).finally(() => { terminado = true; if (timer) clearTimeout(timer) })
+  const tope = new Promise<void>((resolve) => {
+    timer = setTimeout(async () => {
+      if (!terminado) await guardarCall(e.id, { estado: 'error', error: 'La call tardó demasiado en analizarse. Probá de nuevo.' })
+      resolve()
+    }, TOPE_SEGUNDO_PLANO_MS)
+  })
+  const todo = Promise.race([trabajo, tope])
+  if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(todo)
+  else await todo // sin EdgeRuntime (por ejemplo en local) se espera acá
+  return json({ ok: true, enCurso: true }, 202)
 }
 
 async function armarPlan(proyecto: string): Promise<Response> {
@@ -252,7 +288,8 @@ async function armarPlan(proyecto: string): Promise<Response> {
 
   let r
   try {
-    r = await pensar(SISTEMA_PLAN, ESQUEMA_PLAN, `Este es el proyecto:\n\n${contexto}\n\nArmá el plan para llevarlo a una Fase 2.`)
+    // Este camino contesta en la misma llamada: tiene que terminar antes del corte de ~150 s de Supabase.
+    r = await pensar(SISTEMA_PLAN, ESQUEMA_PLAN, `Este es el proyecto:\n\n${contexto}\n\nArmá el plan para llevarlo a una Fase 2.`, { maxTokens: 8000, timeoutMs: 110_000 })
   } catch (err) {
     const f = errorIA(err)
     return json({ error: f.msg }, f.status)
